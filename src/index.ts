@@ -1,6 +1,4 @@
-import express from 'express'
-let app = express()
+import { Server } from 'socket.io'
 
-app.get('/asdf', (_, res) => res.send('adf'))
-
-app.listen(8000, () => console.log('started'))
+const io = new Server()
+io.on('connection', socket => console.log('connection'))
