@@ -2,6 +2,7 @@ import { Room } from './Room'
 
 export class RoomManager {
 	private rooms: Record<string, Room> = {}
+	private waiting: Room = null
 
 	public addRoom(): Room {
 		let room = new Room(this)
@@ -11,5 +12,11 @@ export class RoomManager {
 
 	public getById(id: string): Room | undefined {
 		return this.rooms[id]
+	}
+
+	public getWaiting(): Room {
+		return this.waiting.full
+			? this.waiting = this.addRoom()
+			: this.waiting 
 	}
 }
