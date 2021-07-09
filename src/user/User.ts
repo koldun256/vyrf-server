@@ -1,5 +1,6 @@
 import { Socket } from "socket.io"
 import { Player } from "../objects/Player"
+import { Room } from '../room/Room'
 import { RoomManager } from "../room/RoomManager"
 
 export class User {
