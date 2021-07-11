@@ -1,5 +1,8 @@
-export type Component = Object;
-export type ComponentConstructor<Component> = new (...args: any[]) => Component
+export interface Component {
+  mount?(gameObject: GameObject<any[]>): void;
+  update?(): void;
+}
+export type ComponentConstructor<T extends Component> = new (...args: any[]) => T
 
 export abstract class GameObject<T extends Component[]> {
   constructor(
