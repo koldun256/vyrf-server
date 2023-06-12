@@ -1,15 +1,11 @@
-use std::collections::HashSet;
-use udp_server::{ClientMsg, ServerMsg};
+use game::Game;
 mod udp_server;
-fn main() -> std::io::Result<()> {
+mod game;
+fn main() {
     let (udp_tx, udp_rx) = udp_server::connect();
-    let mut clients: HashSet<String> = HashSet::new();
+    let game_tx = Game::launch();
 
-    while let Ok((client, msg)) = udp_rx.recv() {
-        match msg {
-            ClientMsg::Register => clients.insert(client)
-        };
+    while let Ok((addr, msg)) = udp_rx.recv() {
+        game_tx.send((addr, msg)).expect("game crashed");
     }
-
-    Ok(())
 }
