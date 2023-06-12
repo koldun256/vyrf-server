@@ -7,7 +7,7 @@ enum Error {
 }
 #[derive(Clone, Copy)]
 pub enum ServerMsg { 
-    AddObject { id: u8, kind: u8 },
+    AddObject { id: u8, kind: u8, x: u16, y: u16 },
     BindPlayer { id: u8 }
 }
 
@@ -26,10 +26,14 @@ fn parse_msg(buf: &[u8; 10]) -> Result<ClientMsg, Error> {
 fn gen_payload(msg: ServerMsg) -> [u8; 10] { 
     let mut payload = [0; 10];
     match msg {
-        ServerMsg::AddObject { id, kind } => {
+        ServerMsg::AddObject { id, kind, x, y } => {
             payload[0] = 0;
             payload[1] = id;
             payload[2] = kind;
+            payload[3] = (x / 256) as u8;
+            payload[4] = (x % 256) as u8;
+            payload[5] = (y / 256) as u8;
+            payload[6] = (y % 256) as u8;
         },
         ServerMsg::BindPlayer { id } => {
             payload[0] = 1;

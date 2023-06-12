@@ -2,12 +2,12 @@ use std::ops::Add;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
-    x: i32,
-    y: i32
+    pub x: u16,
+    pub y: u16
 }
 
-impl From<(i32, i32)> for Position {
-    fn from(pos_data: (i32, i32)) -> Self {
+impl From<(u16, u16)> for Position {
+    fn from(pos_data: (u16, u16)) -> Self {
         Position {
             x: pos_data.0,
             y: pos_data.1

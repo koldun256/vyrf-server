@@ -66,18 +66,34 @@ impl Game {
             ClientMsg::Register => {
                 let id = self.last_id + 1;
                 self.last_id += 1;
-                self.game_objects.push(GameObjectKind::Player(Player {
-                    id,
-                    position: (id as i32 * 100, id as i32 * 100).into(),
-                    addr: addr.clone()
-                }));
+                let position: Position = (id as u16 * 100, id as u16 * 100).into();
                 self.send_to_all_players(ServerMsg::AddObject {
                     id,
-                    kind: 1
+                    kind: 1,
+                    x: position.x,
+                    y: position.y
                 });
+                self.game_objects.push(GameObjectKind::Player(Player {
+                    id,
+                    position,
+                    addr: addr.clone()
+                }));
+                for obj in &self.game_objects {
+                    match obj {
+                        GameObjectKind::Player(player) => {
+                            self.udp_tx.send((addr.clone(), ServerMsg::AddObject {
+                                id: player.id,
+                                kind: 1,
+                                x: player.position.x,
+                                y: player.position.y
+                            })).unwrap();
+                        }
+                    }
+                }
                 self.udp_tx.send((addr, ServerMsg::BindPlayer { id })).unwrap();
             }
         }
     }
+
     fn frame(&mut self) {}
 }
