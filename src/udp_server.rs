@@ -5,7 +5,11 @@ use std::thread;
 enum Error {
     InvalidMessage
 }
-pub enum ServerMsg { }
+#[derive(Clone, Copy)]
+pub enum ServerMsg { 
+    AddObject { id: u8, kind: u8 },
+    BindPlayer { id: u8 }
+}
 
 pub enum ClientMsg {
     Register
@@ -19,7 +23,21 @@ fn parse_msg(buf: &[u8; 10]) -> Result<ClientMsg, Error> {
     }
 }
 
-fn gen_payload(msg: ServerMsg) -> [u8; 10] { [0; 10] }
+fn gen_payload(msg: ServerMsg) -> [u8; 10] { 
+    let mut payload = [0; 10];
+    match msg {
+        ServerMsg::AddObject { id, kind } => {
+            payload[0] = 0;
+            payload[1] = id;
+            payload[2] = kind;
+        },
+        ServerMsg::BindPlayer { id } => {
+            payload[0] = 1;
+            payload[1] = id;
+        }
+    }
+    payload
+}
 
 pub fn connect() -> (Sender<(String, ServerMsg)>, Receiver<(String, ClientMsg)>) {
     let (tx1, rx1) = channel(); // from client to server

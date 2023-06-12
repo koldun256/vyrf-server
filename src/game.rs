@@ -3,8 +3,8 @@ use std::thread;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::udp_server::ClientMsg;
-mod position;
+use crate::udp_server::{ClientMsg, ServerMsg};
+pub mod position;
 
 trait GameObject {
     fn get_position(&self) -> &Position;
@@ -22,24 +22,25 @@ impl GameObject for Player {
     fn get_position(&self) -> &Position { &self.position }
 }
 
-#[repr(u8)]
 enum GameObjectKind {
-    Player(Player) = 1
+    Player(Player)
 }
 
 pub struct Game {
     last_id: u8,
     game_objects: Vec<GameObjectKind>,
+    udp_tx: mpsc::Sender<(String, ServerMsg)>,
     active: bool
 }
 
 impl Game {
-    pub fn launch() -> mpsc::Sender<(String, ClientMsg)> {
+    pub fn launch(udp_tx: mpsc::Sender<(String, ServerMsg)>) -> mpsc::Sender<(String, ClientMsg)> {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut game = Game {
                 last_id: 0,
                 game_objects: Vec::new(),
+                udp_tx,
                 active: true
             };
 
@@ -53,9 +54,29 @@ impl Game {
         });
         tx
     }
+    fn send_to_all_players(&self, msg: ServerMsg) {
+        for game_object in &self.game_objects {
+            if let GameObjectKind::Player(player) = game_object {
+                self.udp_tx.send((player.addr.clone(), msg)).expect("main thread died");
+            }
+        }
+    }
     fn handle_msg(&mut self, addr: String, msg: ClientMsg) {
         match msg {
-            ClientMsg::Register => println!("registring client {}", addr)
+            ClientMsg::Register => {
+                let id = self.last_id + 1;
+                self.last_id += 1;
+                self.game_objects.push(GameObjectKind::Player(Player {
+                    id,
+                    position: (id as i32 * 100, id as i32 * 100).into(),
+                    addr: addr.clone()
+                }));
+                self.send_to_all_players(ServerMsg::AddObject {
+                    id,
+                    kind: 1
+                });
+                self.udp_tx.send((addr, ServerMsg::BindPlayer { id })).unwrap();
+            }
         }
     }
     fn frame(&mut self) {}
