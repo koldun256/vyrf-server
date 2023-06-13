@@ -2,13 +2,16 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::net::UdpSocket;
 use std::thread;
 
+use crate::game::vec2::Vec2;
+
 enum Error {
     InvalidMessage
 }
 #[derive(Clone, Copy)]
 pub enum ServerMsg { 
-    AddObject { id: u8, kind: u8, x: u16, y: u16 },
-    BindPlayer { id: u8 }
+    AddObject { id: u8, kind: u8, pos: Vec2 },
+    BindPlayer { id: u8 },
+    SetPosition { id: u8, pos: Vec2 }
 }
 
 pub enum ClientMsg {
@@ -26,19 +29,31 @@ fn parse_msg(buf: &[u8; 10]) -> Result<ClientMsg, Error> {
 fn gen_payload(msg: ServerMsg) -> [u8; 10] { 
     let mut payload = [0; 10];
     match msg {
-        ServerMsg::AddObject { id, kind, x, y } => {
+        ServerMsg::AddObject { id, kind, pos } => {
             payload[0] = 0;
             payload[1] = id;
             payload[2] = kind;
-            payload[3] = (x / 256) as u8;
-            payload[4] = (x % 256) as u8;
-            payload[5] = (y / 256) as u8;
-            payload[6] = (y % 256) as u8;
+            let x_bytes = pos.x.to_be_bytes();
+            let y_bytes = pos.y.to_be_bytes();
+            payload[3] = x_bytes[0];
+            payload[4] = x_bytes[1];
+            payload[5] = y_bytes[0];
+            payload[6] = y_bytes[1];
         },
         ServerMsg::BindPlayer { id } => {
             payload[0] = 1;
             payload[1] = id;
-        }
+        },
+        ServerMsg::SetPosition { id, pos } => {
+            payload[0] = 2;
+            payload[1] = id;
+            let x_bytes = pos.x.to_be_bytes();
+            let y_bytes = pos.y.to_be_bytes();
+            payload[2] = x_bytes[0];
+            payload[3] = x_bytes[1];
+            payload[4] = y_bytes[0];
+            payload[5] = y_bytes[1];
+        },
     }
     payload
 }
