@@ -19,10 +19,10 @@ struct GameObject {
 impl GameObject {
     fn new_player(id: u8, addr: String) -> Self {
         GameObject { 
-            position: (id as i16 * 100, id as i16 * 100).into(),
+            position: Vec2::ZERO,
             id,
             kind: GameObjectKind::Player { addr },
-            movement: (1, 1).into()
+            movement: Vec2::ZERO
         }
     }
     fn init_msg(&self) -> ServerMsg {
@@ -70,18 +70,28 @@ impl Game {
             }
         }
     }
-    fn handle_msg(&mut self, addr: String, msg: ClientMsg) {
+    fn handle_msg(&mut self, client_addr: String, msg: ClientMsg) {
         match msg {
             ClientMsg::Register => {
-                self.game_objects.push(GameObject::new_player(self.last_id + 1, addr.clone()));
+                self.game_objects.push(GameObject::new_player(self.last_id + 1, client_addr.clone()));
                 self.last_id += 1;
 
                 let player_obj = self.game_objects.last().unwrap();
                 for obj in &self.game_objects {
-                    self.udp_tx.send((addr.clone(), obj.init_msg())).unwrap();
+                    self.udp_tx.send((client_addr.clone(), obj.init_msg())).unwrap();
                 }
                 self.send_to_all_players(player_obj.init_msg());
-                self.udp_tx.send((addr, ServerMsg::BindPlayer { id: player_obj.id })).unwrap();
+                self.udp_tx.send((client_addr, ServerMsg::BindPlayer { id: player_obj.id })).unwrap();
+            },
+            ClientMsg::SetDirection(dir) => {
+                for obj in &mut self.game_objects {
+                    if let GameObjectKind::Player { addr } = &obj.kind {
+                        if addr == &client_addr {
+                            obj.movement = dir;
+                            return;
+                        }
+                    }
+                }
             }
         }
     }

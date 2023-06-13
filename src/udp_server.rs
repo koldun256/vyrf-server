@@ -15,14 +15,26 @@ pub enum ServerMsg {
 }
 
 pub enum ClientMsg {
-    Register
+    Register,
+    SetDirection(Vec2)
 }
 
 fn parse_msg(buf: &[u8; 10]) -> Result<ClientMsg, Error> {
-    if buf == &[0u8; 10] {
-        Ok(ClientMsg::Register)
-    } else {
-        Err(Error::InvalidMessage)
+    match buf[0] {
+        0 => Ok(ClientMsg::Register),
+        1 => Ok(ClientMsg::SetDirection(match buf[1] {
+            0 => (-1, -1).into(),
+            1 => (0, -1).into(),
+            2 => (1, -1).into(),
+            3 => (-1, 0).into(),
+            4 => (0, 0).into(),
+            5 => (1, 0).into(),
+            6 => (-1, 1).into(),
+            7 => (0, 1).into(),
+            8 => (1, 1).into(),
+            _ => return Err(Error::InvalidMessage)
+        })),
+        _ => Err(Error::InvalidMessage)
     }
 }
 
