@@ -1,5 +1,5 @@
 use vec2::Vec2;
-use std::thread;
+use std::{thread, time::Instant};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -52,13 +52,13 @@ impl Game {
                 udp_tx,
                 active: true
             };
-
             while game.active {
+                let frame_start = Instant::now();
                 while let Some((addr, msg)) = rx.try_iter().next() {
                     game.handle_msg(addr, msg);
                 }
                 game.frame();
-                thread::sleep(Duration::from_millis(50));
+                thread::sleep(Duration::from_millis(20) - frame_start.elapsed()); // fixed 50 fps
             }
         });
         tx
