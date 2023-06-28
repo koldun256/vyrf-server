@@ -1,122 +1,121 @@
-use vec2::Vec2;
-use std::{thread, time::Instant};
 use std::sync::mpsc;
 use std::time::Duration;
+use std::{thread, time::Instant};
 
-use crate::udp_server::{ClientMsg, ServerMsg};
-pub mod vec2;
+use crate::udp_server::{ClientMessage, ServerMessage};
 
-pub enum GameObjectKind {
-    Player { addr: String },
-    Thing
+use self::gameobject::player::Player;
+use self::gameobject::{GameObject, GameObjectKind};
+pub mod vector2;
+pub mod gameobject;
+
+pub enum GameEvent {
+    IncomingMessage(String, ClientMessage)
 }
-struct GameObject {
-    position: Vec2,
-    id: u8,
-    kind: GameObjectKind,
-    movement: Vec2
-}
-impl GameObject {
-    fn new_player(id: u8, addr: String) -> Self {
-        GameObject { 
-            position: Vec2::ZERO,
-            id,
-            kind: GameObjectKind::Player { addr },
-            movement: Vec2::ZERO
-        }
-    }
-    fn init_msg(&self) -> ServerMsg {
-        ServerMsg::AddObject {
-            id: self.id, 
-            kind: match &self.kind {
-                GameObjectKind::Player { addr: _ } => 1,
-                GameObjectKind::Thing => 2
-            },
-            pos: self.position
-        }
-    }
-}
+
 pub struct Game {
     last_id: u8,
-    game_objects: Vec<GameObject>,
-    udp_tx: mpsc::Sender<(String, ServerMsg)>,
-    active: bool
+    game_objects: Vec<Box<dyn GameObject>>,
+    events: Vec<GameEvent>,
+    udp_sender: mpsc::Sender<(String, ServerMessage)>,
+    udp_reciever: mpsc::Receiver<(String, ClientMessage)>,
+    active: bool,
 }
+
 impl Game {
-    pub fn launch(udp_tx: mpsc::Sender<(String, ServerMsg)>) -> mpsc::Sender<(String, ClientMsg)> {
-        let (tx, rx) = mpsc::channel();
+    pub fn launch(udp_sender: mpsc::Sender<(String, ServerMessage)>) -> mpsc::Sender<(String, ClientMessage)> {
+        let (game_sender, game_reciever) = mpsc::channel();
         thread::spawn(move || {
             let mut game = Game {
                 last_id: 0,
                 game_objects: Vec::new(),
-                udp_tx,
-                active: true
+                udp_sender,
+                udp_reciever: game_reciever,
+                active: true,
+                events: Vec::new(),
             };
+
             while game.active {
                 let frame_start = Instant::now();
-                while let Some((addr, msg)) = rx.try_iter().next() {
-                    game.handle_msg(addr, msg);
-                }
-                game.frame();
+                game.update();
                 thread::sleep(Duration::from_millis(20) - frame_start.elapsed()); // fixed 50 fps
             }
         });
-        tx
+        game_sender
     }
-    fn send_to_all_players(&self, msg: ServerMsg) {
-        for game_object in &self.game_objects {
-            if let GameObjectKind::Player { addr } = &game_object.kind {
-                self.udp_tx.send((addr.clone(), msg)).expect("main thread died");
-            }
-        }
-    }
-    fn handle_msg(&mut self, client_addr: String, msg: ClientMsg) {
-        match msg {
-            ClientMsg::Register => {
-                self.game_objects.push(GameObject::new_player(self.last_id + 1, client_addr.clone()));
-                self.last_id += 1;
 
-                let player_obj = self.game_objects.last().unwrap();
-                for obj in &self.game_objects {
-                    self.udp_tx.send((client_addr.clone(), obj.init_msg())).unwrap();
-                }
-                self.send_to_all_players(player_obj.init_msg());
-                self.udp_tx.send((client_addr, ServerMsg::BindPlayer { id: player_obj.id })).unwrap();
-            },
-            ClientMsg::SetDirection(dir) => {
-                for obj in &mut self.game_objects {
-                    if let GameObjectKind::Player { addr } = &obj.kind {
-                        if addr == &client_addr {
-                            obj.movement = dir;
-                            return;
-                        }
-                    }
-                }
+    fn send_to_all_players(&self, message: ServerMessage) {
+        for game_object in &self.game_objects {
+            if let GameObjectKind::Player(player) = game_object.downcast() {
+                player.send(message);
             }
         }
     }
-    fn get_by_id(&self, id: u8) -> Option<&GameObject> {
-        for obj in &self.game_objects {
-            if obj.id == id {
-                return Some(obj)
+
+    fn create_id(&mut self) -> u8 {
+        self.last_id += 1;
+        self.last_id
+    }
+
+    fn add_object(&mut self, object: Box<dyn GameObject>) {
+        self.send_to_all_players(object.generate_init_message());
+        self.game_objects.push(object);
+    }
+
+    fn register_player(&mut self, address: String) {
+        let new_player = Box::new(Player::new(
+            self.create_id(),
+            address,
+            self
+        ));
+        for object in &self.game_objects {
+            new_player.send(object.generate_init_message());
+        }
+        self.send_to_all_players(new_player.generate_init_message());
+        new_player.send(new_player.generate_init_message());
+        new_player.send(ServerMessage::BindPlayer { id: new_player.get_id() });
+        self.add_object(new_player);
+    }
+
+    fn get_by_id(&self, id: u8) -> Option<&Box<dyn GameObject>> {
+        for object in &self.game_objects {
+            if object.get_id() == id {
+                return Some(object);
             }
         }
         None
     }
 
-    fn frame(&mut self) {
-        let mut moved_ids: Vec<u8> = Vec::new();
-        for obj in &mut self.game_objects {
-            if obj.movement != Vec2::ZERO {
-                obj.position += obj.movement;
-                moved_ids.push(obj.id);
+    fn get_by_id_mut(&mut self, id: u8) -> Option<&mut Box<dyn GameObject>> {
+        for object in &mut self.game_objects {
+            if object.get_id() == id {
+                return Some(object);
             }
         }
-        for moved_id in moved_ids {
-            self.send_to_all_players(ServerMsg::SetPosition {
-                id: moved_id,
-                pos: self.get_by_id(moved_id).unwrap().position 
-            });
+        None
+    }
+
+    fn update(&mut self) {
+        self.events = Vec::new();
+        while let Some((address, message)) = self.udp_reciever.try_iter().next() {
+            if let ClientMessage::Register = message {
+                self.register_player(address);
+            } else {
+                self.events.push(GameEvent::IncomingMessage(address, message));
+            }
+        }
+        let mut dispatches: Vec<Box<dyn FnOnce(&mut Game) -> ()>> = Vec::new();
+        for object in &mut self.game_objects {
+            dispatches.push(object.update(&self.events));
+        }
+        for dispatch in dispatches {
+            dispatch(self);
+        }
+        for object in &self.game_objects {
+            self.send_to_all_players(ServerMessage::SetPosition {
+                id: object.get_id(),
+                position: object.get_position(),
+            })
         }
     }
 }

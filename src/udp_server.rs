@@ -2,27 +2,28 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::net::UdpSocket;
 use std::thread;
 
-use crate::game::vec2::Vec2;
+use crate::game::vector2::Vector2;
 
 enum Error {
     InvalidMessage
 }
 #[derive(Clone, Copy)]
-pub enum ServerMsg { 
-    AddObject { id: u8, kind: u8, pos: Vec2 },
+pub enum ServerMessage { 
+    AddObject { id: u8, kind: u8, position: Vector2 },
     BindPlayer { id: u8 },
-    SetPosition { id: u8, pos: Vec2 }
+    SetPosition { id: u8, position: Vector2 }
 }
 
-pub enum ClientMsg {
+#[derive(Clone, Copy)]
+pub enum ClientMessage {
     Register,
-    SetDirection(Vec2)
+    SetDirection(Vector2)
 }
 
-fn parse_msg(buf: &[u8; 10]) -> Result<ClientMsg, Error> {
+fn parse_message(buf: &[u8; 10]) -> Result<ClientMessage, Error> {
     match buf[0] {
-        0 => Ok(ClientMsg::Register),
-        1 => Ok(ClientMsg::SetDirection(match buf[1] {
+        0 => Ok(ClientMessage::Register),
+        1 => Ok(ClientMessage::SetDirection(match buf[1] {
             0 => (-1, -1).into(),
             1 => (0, -1).into(),
             2 => (1, -1).into(),
@@ -38,29 +39,29 @@ fn parse_msg(buf: &[u8; 10]) -> Result<ClientMsg, Error> {
     }
 }
 
-fn gen_payload(msg: ServerMsg) -> [u8; 10] { 
+fn gen_payload(message: ServerMessage) -> [u8; 10] { 
     let mut payload = [0; 10];
-    match msg {
-        ServerMsg::AddObject { id, kind, pos } => {
+    match message {
+        ServerMessage::AddObject { id, kind, position } => {
             payload[0] = 0;
             payload[1] = id;
             payload[2] = kind;
-            let x_bytes = pos.x.to_be_bytes();
-            let y_bytes = pos.y.to_be_bytes();
+            let x_bytes = position.x.to_be_bytes();
+            let y_bytes = position.y.to_be_bytes();
             payload[3] = x_bytes[0];
             payload[4] = x_bytes[1];
             payload[5] = y_bytes[0];
             payload[6] = y_bytes[1];
         },
-        ServerMsg::BindPlayer { id } => {
+        ServerMessage::BindPlayer { id } => {
             payload[0] = 1;
             payload[1] = id;
         },
-        ServerMsg::SetPosition { id, pos } => {
+        ServerMessage::SetPosition { id, position } => {
             payload[0] = 2;
             payload[1] = id;
-            let x_bytes = pos.x.to_be_bytes();
-            let y_bytes = pos.y.to_be_bytes();
+            let x_bytes = position.x.to_be_bytes();
+            let y_bytes = position.y.to_be_bytes();
             payload[2] = x_bytes[0];
             payload[3] = x_bytes[1];
             payload[4] = y_bytes[0];
@@ -70,24 +71,24 @@ fn gen_payload(msg: ServerMsg) -> [u8; 10] {
     payload
 }
 
-pub fn connect() -> (Sender<(String, ServerMsg)>, Receiver<(String, ClientMsg)>) {
-    let (tx1, rx1) = channel(); // from client to server
-    let (tx2, rx2) = channel(); // from server to client
-    let socket1 = UdpSocket::bind("127.0.0.1:8080").expect("cannot open udp socket");
-    let socket2 = socket1.try_clone().unwrap();
+pub fn launch() -> (Sender<(String, ServerMessage)>, Receiver<(String, ClientMessage)>) {
+    let (udp_sender, main_receiver) = channel();
+    let (main_sender, udp_receiver) = channel();
+    let receiving_socket = UdpSocket::bind("127.0.0.1:8080").expect("cannot open udp socket");
+    let sending_socket = receiving_socket.try_clone().unwrap();
     thread::spawn(move || {
         let mut payload = [0; 10];
-        while let Ok((_, client)) = socket1.recv_from(&mut payload) {
-            match parse_msg(&payload) {
-                Ok(msg) => tx1.send((client.to_string(), msg)).unwrap(),
+        while let Ok((_, client)) = receiving_socket.recv_from(&mut payload) {
+            match parse_message(&payload) {
+                Ok(message) => udp_sender.send((client.to_string(), message)).unwrap(),
                 Err(Error::InvalidMessage) => {
-                    println!("invalid msg {:?} from client", &payload);
+                    println!("invalid message {:?} from client", &payload);
                 }
             }
         };
     });
-    thread::spawn(move || while let Ok((addr, msg)) = rx2.recv() {
-        socket2.send_to(&gen_payload(msg), addr).unwrap();
+    thread::spawn(move || while let Ok((address, message)) = udp_receiver.recv() {
+        sending_socket.send_to(&gen_payload(message), address).unwrap();
     });
-    (tx2, rx1)
+    (main_sender, main_receiver)
 }
