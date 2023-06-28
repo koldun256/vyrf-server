@@ -50,7 +50,7 @@ impl Player {
             position: Vector2::ZERO,
             address,
             movement: Vector2::ZERO,
-            udp_tx: game.udp_tx.clone(),
+            udp_tx: game.udp_sender.clone(),
             speed: 4
         }
     }
